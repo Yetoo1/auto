@@ -2,10 +2,16 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
+#if defined (__linux__)
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
+#include <errno.h>
 
 //#define COMMANDS ("")
 
@@ -77,10 +83,58 @@ int startproc(char* command)
 		NULL,   //Current directory - no separate path
 		&si,    //Pointer to STARTUPINFO
 		&pif);   //Pointer to PROCESS_INFORMATION
-	#endif
-
+	
 	/*Checks if create process fails.*/
 	if (bRet == FALSE)
+	#endif
+	#if defined (__linux__)
+		  pid_t pid;
+		  int status;
+		  pid_t ret;
+		  //char *const args[3] = {"/usr/bin/firefox", "https://example.org", NULL};
+		  char **const args;
+		  //char **env = {"DISPLAY=:0"};
+		 char **env; 
+		 extern char **environ;
+		 
+		  /* ... Sanitize arguments ... */
+		  
+		  pid = fork();
+		  if (pid == -1)
+		  {
+				/* Handle error */
+				fprintf(stderr, "%s: fork failed\n", __func__);
+		  } 
+		  else if (pid != 0) 
+		  {
+			while ((ret = waitpid(pid, &status, 0)) == -1)
+			{
+			  if (errno != EINTR) 
+			  {
+					/* Handle error */
+					fprintf(stderr, "%s: waitpaid errno returned EINTR\n", __func__);
+					break;
+			  }
+			}
+			if ((ret != -1) && (!WIFEXITED(status) || !WEXITSTATUS(status)) ) 
+				{
+			  		/* Report unexpected child status */
+					fprintf(stderr, "%s: child failed\n", __func__);
+				}
+		  }
+		  else 
+		  {
+			/* ... Initialize env as a sanitized copy of environ ... */
+			//if (execve("/usr/bin/firefox", args, env) == -1)
+			/*this works*///if (execv("/usr/bin/firefox", args) == -1)
+			if (execv("/usr/bin/firefox example.org", args) == -1)
+			{  
+			/* Handle error */
+			printf("asd\n");			
+			  _Exit(127);
+			}
+		  }
+	#endif	
 	{
 		//Checks if DEBUG global varialbe is 1 to print if CreateProcess failed for token
 		if (g.DEBUG)
@@ -93,7 +147,8 @@ int startproc(char* command)
 		/*Allocate memory for errorMessage*/
 		char* errorMessage = malloc(errorMessageSize);
 		/*Use sprintf_s to combine firstPart, command, and thirdPart into errorMessage string using errorMessageSize*/
-		sprintf_s(errorMessage, errorMessageSize, "%s %s%s", firstPart, command, thirdPart);
+		//sprintf_s(errorMessage, errorMessageSize, "%s %s%s", firstPart, command, thirdPart);
+		snprintf(errorMessage, errorMessageSize, "%s %s%s", firstPart, command, thirdPart);
 		/*Check if compiled on windows and use windows specific functions to show messagebox and pass command string and errorMessage. 
 		The command string is passed so that it can easily be copied to the clipboard and not need to mess with string manipulation.*/
 		#if defined (_WIN32) || (_WIN64)
@@ -162,10 +217,11 @@ int main(int argc, char** argv)
 	with a single tab showing example.org (to clarify, if multiple web addresses are used, they will open serially in a single window 
 	(again new window if firefox is already running)) and then executes cmd.exe /c which then executes start and a a bat file located at the root of the C drive.
 	*/
-	char commandString[] = "";
+	char commandString[] = "/usr/bin/firefox https://example.org";
 	const char* delim = "\n";
 	char* context = NULL; 
-	char* token = strtok_s(commandString, delim, &context); //begins separating string by \n
+	//char* token = strtok_s(commandString, delim, &context); //begins separating string by \n
+	char* token = strtok_r(commandString, delim, &context); //begins separating string by \n
 	int ret = 0;
 	/*Loops through token and modifies until token is NULL. For each token, the loop passes to startproc to create a process*/
 	while (token != NULL)
@@ -177,7 +233,8 @@ int main(int argc, char** argv)
 			if (g.DEBUG)
 				printf("startproc returned %d.", ret);
 		}
-		token = strtok_s(NULL, delim, &context);
+		//token = strtok_s(NULL, delim, &context);
+		token = strtok_r(NULL, delim, &context);
 	}
 	
 	return ret;
